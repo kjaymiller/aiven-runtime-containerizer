@@ -1,0 +1,37 @@
+# A more realistic stack: one app image plus every kind of Aiven-managed
+# service this tool recognizes. Only `web` gets dockerized by default --
+# the rest are skipped, since Aiven provisions those natively and a
+# Dockerfile for them would just be a build nobody needs.
+#
+# Try it:
+#   dockerize-images docker-compose.yaml -o docker-compose.after.yaml
+#
+# Then compare to what --include-managed does instead (a separate
+# --docker-dir so it doesn't collide with the Dockerfile the first
+# command already wrote for `web`):
+#   dockerize-images docker-compose.yaml --include-managed \
+#     --docker-dir docker-all -o docker-compose.all-converted.yaml
+services:
+  web:
+    image: myorg/web:1.4.0
+    depends_on:
+      - db
+      - cache
+      - search
+      - queue
+      - warehouse
+
+  db:
+    image: postgres:16
+
+  cache:
+    image: valkey/valkey:7.2
+
+  search:
+    image: opensearchproject/opensearch:2
+
+  queue:
+    image: confluentinc/cp-kafka:7.6.0
+
+  warehouse:
+    image: clickhouse/clickhouse-server:24

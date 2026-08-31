@@ -1,0 +1,20 @@
+# The simplest case: two services pinned to a plain image reference,
+# nothing Aiven-managed involved. `dockerize-images` turns each `image:`
+# into a `build:` pointing at a generated docker/<service>/Dockerfile.
+#
+# This top-of-file comment, and the ports: list below, survive the
+# rewrite untouched (ruamel.yaml, not a full reparse+dump) -- but a
+# comment attached to the `image:` line itself doesn't, since that key
+# is the one being deleted. Compare docker-compose.after.yaml.
+#
+# Try it:
+#   dockerize-images docker-compose.yaml -o docker-compose.after.yaml
+services:
+  web:
+    build: ./docker/web
+    ports:
+      - "8080:80"  # kept as-is -- only image:/build: changes
+
+  otel-collector:
+    build: ./docker/otel-collector
+    command: ["--config=/etc/otel/config.yaml"]

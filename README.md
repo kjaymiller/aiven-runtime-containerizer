@@ -117,6 +117,10 @@ dockerize-images docker-compose.aiven.yaml -o docker-compose.aiven.generated.yam
 
 Run `dockerize-images --help` for all options.
 
+See [`examples/`](examples/) for runnable before/after compose files
+covering all of the above -- basic conversion, managed-service skipping,
+`depends_on` ordering, and service binding.
+
 ## Developing
 
 Uses [mise](https://mise.jdx.dev) as the task runner:
