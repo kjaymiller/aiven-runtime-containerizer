@@ -25,10 +25,10 @@ file, finds every service pinned with `image:`, writes a one-line
 rewrites the compose file to `build:` that directory instead.
 
 Services running on an image Aiven provides as a managed service of its own
-(PostgreSQL, Valkey/Redis, OpenSearch, Kafka) are skipped by default --
-Aiven detects and provisions those natively, so dockerizing them just adds
-a build Aiven doesn't need. Pass -s/--service to convert one of those
-anyway, or --include-managed to stop skipping them entirely.
+(PostgreSQL, Valkey/Redis, OpenSearch, Kafka, ClickHouse) are skipped by
+default -- Aiven detects and provisions those natively, so dockerizing them
+just adds a build Aiven doesn't need. Pass -s/--service to convert one of
+those anyway, or --include-managed to stop skipping them entirely.
 
 Usage:
     dockerize-images docker-compose.aiven.yaml
@@ -48,25 +48,84 @@ from pathlib import Path
 import click
 from ruamel.yaml import YAML
 
-# Substrings matched against the image name (case-insensitive) to detect
-# services backed by an Aiven-managed service type. Aiven auto-detects and
-# provisions these -- no Dockerfile needed, or wanted.
-MANAGED_IMAGE_PATTERNS = (
-    "postgres",
-    "postgis",
-    "valkey",
-    "redis",
-    "opensearch",
-    "kafka",
-)
+# Known image repo names, per Aiven-managed service type, that this tool
+# recognizes as "don't dockerize this -- Aiven provisions it natively".
+# Hand-curated and exact-match (against the repo name only, tag/digest and
+# registry host stripped) rather than a loose substring, so an unrelated
+# image that happens to contain "kafka" or "postgres" in its name (a
+# `kafka-ui` sidecar, a `my-postgres-app` image) doesn't get caught by
+# accident. Add new known image names here as they come up.
+MANAGED_IMAGES: dict[str, tuple[str, ...]] = {
+    "pg": (
+        "postgres",
+        "postgis",
+        "timescale/timescaledb",
+        "timescale/timescaledb-ha",
+        "bitnami/postgresql",
+    ),
+    "valkey": (
+        "valkey/valkey",
+        "valkey",
+        "redis",
+        "bitnami/redis",
+        "bitnami/valkey",
+    ),
+    "opensearch": (
+        "opensearchproject/opensearch",
+        "bitnami/opensearch",
+    ),
+    "kafka": (
+        "confluentinc/cp-kafka",
+        "confluentinc/cp-server",
+        "apache/kafka",
+        "bitnami/kafka",
+    ),
+    "clickhouse": (
+        "clickhouse/clickhouse-server",
+        "yandex/clickhouse-server",
+        "bitnami/clickhouse",
+    ),
+}
+
+
+def _image_repo(image: str) -> str:
+    """Return `image`'s repository name, lowercased, with tag/digest and any
+    registry host stripped (e.g. `docker.io/library/postgres:16` -> `postgres`,
+    `ghcr.io/foo/clickhouse-server:latest` -> `foo/clickhouse-server`).
+    """
+    repo = image.split("@", 1)[0]  # drop a digest, if any
+    if "/" in repo:
+        head, _, tail = repo.rpartition("/")
+        repo = f"{head}/{tail.split(':', 1)[0]}"
+    else:
+        repo = repo.split(":", 1)[0]  # no "/", so no registry port to confuse this
+
+    parts = repo.split("/")
+    # A leading component containing "." or ":" (or literally "localhost") is
+    # a registry host per the Docker image reference spec, not a namespace --
+    # drop it so `docker.io/library/postgres` and `postgres` match the same way.
+    if len(parts) > 1 and (
+        "." in parts[0] or ":" in parts[0] or parts[0] == "localhost"
+    ):
+        parts = parts[1:]
+    return "/".join(parts).lower()
 
 
 def managed_service_match(image: str) -> str | None:
-    """Return the matching pattern if `image` looks like an Aiven-managed service."""
-    lowered = image.lower()
-    for pattern in MANAGED_IMAGE_PATTERNS:
-        if pattern in lowered:
-            return pattern
+    """Return the Aiven service type `image` looks like (e.g. "pg", "kafka"),
+    or None if it doesn't match any known managed-service image.
+
+    A match requires the *whole* repo name or its basename (the part after
+    the last "/") to equal a curated entry or its basename -- not a
+    substring -- so `kafka-ui` or `my-postgres-app` don't get caught by a
+    real `kafka`/`postgres` image's name appearing inside them.
+    """
+    repo = _image_repo(image)
+    basename = repo.rsplit("/", 1)[-1]
+    for service_type, known_images in MANAGED_IMAGES.items():
+        for known in known_images:
+            if repo == known or basename == known.rsplit("/", 1)[-1]:
+                return service_type
     return None
 
 
@@ -111,7 +170,7 @@ def build_dockerfile(image: str) -> str:
     is_flag=True,
     help=(
         "Also convert services on an Aiven-managed image "
-        f"({', '.join(MANAGED_IMAGE_PATTERNS)}) instead of skipping them."
+        f"({', '.join(MANAGED_IMAGES)}) instead of skipping them."
     ),
 )
 @click.option(

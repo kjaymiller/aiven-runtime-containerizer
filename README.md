@@ -5,8 +5,19 @@ so [Aiven Apps](https://aiven.io) can build them (it builds from a
 Dockerfile in your repo, not an arbitrary registry image).
 
 Services running on an image Aiven provides as a managed service of its own
-(PostgreSQL, Valkey/Redis, OpenSearch, Kafka) are skipped by default, since
-Aiven detects and provisions those natively.
+are skipped by default, since Aiven detects and provisions those natively.
+Detection is an exact match (registry host and tag ignored) against a
+curated list of known image names per service type:
+
+| Aiven service type | Example images |
+| --- | --- |
+| `pg` | `postgres`, `postgis`, `timescale/timescaledb`, `bitnami/postgresql` |
+| `valkey` | `valkey/valkey`, `redis`, `bitnami/redis` |
+| `opensearch` | `opensearchproject/opensearch`, `bitnami/opensearch` |
+| `kafka` | `confluentinc/cp-kafka`, `apache/kafka`, `bitnami/kafka` |
+| `clickhouse` | `clickhouse/clickhouse-server`, `bitnami/clickhouse` |
+
+See `MANAGED_IMAGES` in `cli.py` for the full, up-to-date list.
 
 ## Run it with uvx
 

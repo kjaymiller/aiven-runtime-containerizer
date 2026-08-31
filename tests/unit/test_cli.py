@@ -11,32 +11,76 @@ import pytest
 from click.testing import CliRunner
 
 from aiven_runtime_containerizer.cli import (
-    MANAGED_IMAGE_PATTERNS,
+    MANAGED_IMAGES,
     build_dockerfile,
     main,
     managed_service_match,
 )
+
+# Flatten MANAGED_IMAGES into (service_type, image) pairs for parametrizing
+# every curated entry, across every service type.
+_ALL_MANAGED_IMAGES = [
+    (service_type, image)
+    for service_type, images in MANAGED_IMAGES.items()
+    for image in images
+]
 
 # ---------------------------------------------------------------------------
 # managed_service_match
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("pattern", MANAGED_IMAGE_PATTERNS)
-def test_managed_service_match_hits_every_pattern(pattern: str) -> None:
-    image = f"some-registry.example.com/{pattern}:latest"
-    assert managed_service_match(image) == pattern
+@pytest.mark.parametrize(
+    ("service_type", "image"),
+    _ALL_MANAGED_IMAGES,
+    ids=[i for _, i in _ALL_MANAGED_IMAGES],
+)
+def test_managed_service_match_hits_every_curated_image(
+    service_type: str, image: str
+) -> None:
+    assert managed_service_match(image) == service_type
+    assert managed_service_match(f"{image}:16") == service_type
+    assert managed_service_match(f"docker.io/{image}:latest") == service_type
 
 
-@pytest.mark.parametrize("pattern", MANAGED_IMAGE_PATTERNS)
-def test_managed_service_match_is_case_insensitive(pattern: str) -> None:
-    image = f"{pattern.upper()}:16"
-    assert managed_service_match(image) == pattern
+@pytest.mark.parametrize(
+    ("service_type", "image"),
+    _ALL_MANAGED_IMAGES,
+    ids=[i for _, i in _ALL_MANAGED_IMAGES],
+)
+def test_managed_service_match_is_case_insensitive(
+    service_type: str, image: str
+) -> None:
+    assert managed_service_match(image.upper()) == service_type
 
 
-def test_managed_service_match_returns_none_for_unmanaged_image() -> None:
-    assert managed_service_match("myorg/web:1.2.3") is None
-    assert managed_service_match("nginx:latest") is None
+@pytest.mark.parametrize(
+    ("service_type", "image"),
+    _ALL_MANAGED_IMAGES,
+    ids=[i for _, i in _ALL_MANAGED_IMAGES],
+)
+def test_managed_service_match_matches_via_a_different_registry_and_namespace(
+    service_type: str, image: str
+) -> None:
+    basename = image.rsplit("/", 1)[-1]
+    assert managed_service_match(f"ghcr.io/some-org/{basename}:1.0") == service_type
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        "myorg/web:1.2.3",
+        "nginx:latest",
+        # near-misses: contain a managed service's name as a substring, but
+        # aren't that service -- substring matching would wrongly catch these.
+        "kafka-ui:latest",
+        "kafka-exporter:latest",
+        "my-postgres-app:latest",
+        "postgres-backup-tool:latest",
+    ],
+)
+def test_managed_service_match_returns_none_for_unmanaged_image(image: str) -> None:
+    assert managed_service_match(image) is None
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +121,7 @@ def test_default_run_reports_skipped_services(
     result = runner.invoke(main, [str(compose_file)])
 
     assert result.exit_code == 0, result.output
-    assert "db (looks like an Aiven-managed 'postgres' service" in result.output
+    assert "db (looks like an Aiven-managed 'pg' service" in result.output
     assert "already-built (already has build:)" in result.output
     assert "no-image (no image:)" in result.output
 
