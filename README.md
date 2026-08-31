@@ -61,3 +61,27 @@ dockerize-images docker-compose.aiven.yaml -o docker-compose.aiven.generated.yam
 ```
 
 Run `dockerize-images --help` for all options.
+
+## Developing
+
+Uses [mise](https://mise.jdx.dev) as the task runner:
+
+```sh
+mise run install  # uv sync --extra dev
+mise run test     # unit tests only (pytest -m "not e2e")
+mise run lint     # ruff check
+mise run fmt      # ruff format
+mise run check    # what CI runs: fmt check + lint + unit tests
+```
+
+`mise run test:e2e` additionally exercises the real Aiven API -- it
+creates and tears down dev-tier services in a real project, so it's
+opt-in, local/manual only, and not part of `check` or CI's default
+workflow. It reads Aiven credentials via
+[fnox](https://github.com/jdx/fnox) (reuses a global `AIVEN_TOKEN` if
+you already have one set: `fnox set AIVEN_TOKEN --global`).
+
+CI (`.github/workflows/ci.yml`) runs `mise run check` on every PR. A
+separate, manually-triggered workflow (`.github/workflows/e2e.yml`,
+`workflow_dispatch` only -- never on a PR event) runs the e2e suite in
+GitHub Actions using an `AIVEN_TOKEN` repo secret.
