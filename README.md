@@ -19,6 +19,46 @@ curated list of known image names per service type:
 
 See `MANAGED_IMAGES` in `cli.py` for the full, up-to-date list.
 
+### Binding a managed service to a real Aiven service
+
+Pass `--project` (or set `AIVEN_PROJECT`) and a managed-looking service is
+*bound* to a real, existing Aiven service instead of just skipped: its
+resolved host/port/user/dbname get written into its `environment:` block.
+It's still not dockerized -- Aiven runs it natively either way -- but the
+compose file now has real connection details for it. Requires
+`AIVEN_TOKEN` in the environment (read-only lookups only: this never
+creates, modifies, or deletes a service).
+
+Which real service it binds to:
+
+- **By convention (default):** the one Aiven service of that type
+  (`pg`/`opensearch`/`kafka`/`clickhouse`/`valkey`) in the project. If
+  there's more than one, that's an error, not a guess -- pick one
+  explicitly with one of the two options below.
+- **`x-aiven-service:`** on the compose service, naming the Aiven service
+  by name (compose ignores unknown `x-*` keys, so this is safe alongside
+  a normal `docker compose up`):
+
+  ```yaml
+  services:
+    db:
+      image: postgres:16
+      x-aiven-service: my-production-pg
+  ```
+
+- **`--bind db=my-production-pg`** on the command line -- same effect,
+  without editing the compose file.
+
+A password is never fetched or written to disk. The `environment:` block
+gets a `${AIVEN_DB_PASSWORD}`-style reference instead of a literal value,
+for the container to resolve at runtime from whatever the platform
+injects.
+
+```sh
+dockerize-images docker-compose.aiven.yaml --project jay-miller
+dockerize-images docker-compose.aiven.yaml --project jay-miller --bind db=my-pg
+```
+
 ## Run it with uvx
 
 No install step needed — `uvx` pulls the tool straight from GitHub, runs it
