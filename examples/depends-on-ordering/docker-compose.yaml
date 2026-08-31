@@ -1,0 +1,21 @@
+# `web` depends on `worker`, which depends on `db`. `db` is Aiven-managed
+# (postgres) so it's skipped and imposes no ordering constraint; `worker`
+# still has to be processed -- and its Dockerfile written -- before `web`.
+#
+# Try it and watch the "Build order:" line and the order services are
+# announced in:
+#   dockerize-images docker-compose.yaml -o docker-compose.after.yaml
+services:
+  web:
+    image: myorg/web:2.1.0
+    depends_on:
+      - worker
+
+  worker:
+    image: myorg/worker:2.1.0
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
