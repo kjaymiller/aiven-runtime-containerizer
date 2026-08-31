@@ -130,11 +130,24 @@ mise run check    # what CI runs: fmt check + lint + unit tests
 ```
 
 `mise run test:e2e` additionally exercises the real Aiven API -- it
-creates and tears down dev-tier services in a real project, so it's
-opt-in, local/manual only, and not part of `check` or CI's default
+creates dev-tier `pg`/`opensearch`/`kafka`/`clickhouse` services in a
+real project (`AIVEN_PROJECT`, default `jay-miller`), runs the CLI
+against them, and always tears them down again, including on failure.
+Opt-in, local/manual only, not part of `check` or CI's default
 workflow. It reads Aiven credentials via
 [fnox](https://github.com/jdx/fnox) (reuses a global `AIVEN_TOKEN` if
-you already have one set: `fnox set AIVEN_TOKEN --global`).
+you already have one set: `fnox set AIVEN_TOKEN --global`) and skips
+cleanly, rather than failing, if `AIVEN_TOKEN` isn't set anywhere.
+
+The plan slug for each service type (`AIVEN_E2E_PG_PLAN`,
+`_OPENSEARCH_PLAN`, `_KAFKA_PLAN`, `_CLICKHOUSE_PLAN` -- defaults in
+`tests/e2e/conftest.py`) and the cloud region (`AIVEN_E2E_CLOUD`,
+default `do-nyc`) are env vars, not hardcoded, since available plans
+differ per account and change over time. If a plan slug is wrong for
+your account, `mise run test:e2e` fails loudly at service-create time
+with the API's error -- check `avn service plan-list --project
+<project> --service-type <type>` and override the corresponding env
+var.
 
 CI (`.github/workflows/ci.yml`) runs `mise run check` on every PR. A
 separate, manually-triggered workflow (`.github/workflows/e2e.yml`,
