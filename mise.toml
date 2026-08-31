@@ -1,0 +1,31 @@
+[tools]
+python = "3.12"
+uv = "latest"
+fnox = "latest"
+
+[env]
+_.python.venv = { path = ".venv", create = true }
+
+[tasks.install]
+description = "Install dependencies (incl. dev/test extras) with uv"
+run = "uv sync --extra dev"
+
+[tasks.test]
+description = "Run the unit test suite (no Aiven API calls)"
+run = "uv run pytest -m 'not e2e' -v"
+
+[tasks."test:e2e"]
+description = "Run end-to-end tests against the real Aiven API (creates/tears down dev-tier services in the jay-miller project). Manual/local only -- never run in normal CI."
+run = "fnox exec -- uv run pytest -m e2e -v"
+
+[tasks.lint]
+description = "Lint with ruff"
+run = "uv run ruff check ."
+
+[tasks.fmt]
+description = "Format with ruff"
+run = "uv run ruff format ."
+
+[tasks.check]
+description = "Format check + lint + unit tests (what CI runs on every PR)"
+run = ["uv run ruff format --check .", "uv run ruff check .", "uv run pytest -m 'not e2e'"]

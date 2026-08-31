@@ -11,8 +11,20 @@ dependencies = [
     "ruamel.yaml>=0.18",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+]
+
 [project.scripts]
 dockerize-images = "aiven_runtime_containerizer.cli:main"
+
+[tool.pytest.ini_options]
+markers = [
+    "e2e: hits the real Aiven API, run via `mise run test:e2e` only",
+]
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
