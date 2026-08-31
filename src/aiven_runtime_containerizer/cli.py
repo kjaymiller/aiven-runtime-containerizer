@@ -60,6 +60,7 @@ from ruamel.yaml import YAML
 
 from .aiven_services import AivenApiServiceDirectory, CachingServiceDirectory
 from .binding import binding_environment, parse_bind_flags, resolve_binding
+from .ordering import resolve_build_order, validate_dependencies_exist
 
 # Known image repo names, per Aiven-managed service type, that this tool
 # recognizes as "don't dockerize this -- Aiven provisions it natively".
@@ -263,13 +264,22 @@ def main(
                 f"Not found in {compose_file}: {', '.join(sorted(missing))}"
             )
 
+    validate_dependencies_exist(all_services)
+    names_to_process = [name for name in all_services if not wanted or name in wanted]
+    build_order = resolve_build_order(
+        names_to_process,
+        all_services,
+        is_managed=lambda image: bool(managed_service_match(image)),
+    )
+    if len(build_order) > 1:
+        click.echo(f"Build order: {' -> '.join(build_order)}")
+
     converted: list[str] = []
     bound: list[str] = []
     skipped: list[str] = []
 
-    for name, definition in all_services.items():
-        if wanted and name not in wanted:
-            continue
+    for name in build_order:
+        definition = all_services[name]
         if "build" in definition:
             skipped.append(f"{name} (already has build:)")
             continue
