@@ -8,15 +8,32 @@ Services running on an image Aiven provides as a managed service of its own
 (PostgreSQL, Valkey/Redis, OpenSearch, Kafka) are skipped by default, since
 Aiven detects and provisions those natively.
 
-## Install
+## Run it with uvx
 
-Run it directly from GitHub with `uvx`, no install step needed:
+No install step needed — `uvx` pulls the tool straight from GitHub, runs it
+once, and throws the environment away:
 
 ```sh
 uvx --from git+https://github.com/kjaymiller/aiven-runtime-containerizer dockerize-images docker-compose.aiven.yaml
 ```
 
-Or install it into a project/environment:
+Pass any of the usual options after the compose file, same as a normal
+install:
+
+```sh
+uvx --from git+https://github.com/kjaymiller/aiven-runtime-containerizer dockerize-images docker-compose.aiven.yaml --dry-run
+uvx --from git+https://github.com/kjaymiller/aiven-runtime-containerizer dockerize-images docker-compose.aiven.yaml -s otel-collector -s jaeger
+```
+
+To pin a specific tag or commit, append a ref to the git URL:
+
+```sh
+uvx --from git+https://github.com/kjaymiller/aiven-runtime-containerizer@v0.1.0 dockerize-images docker-compose.aiven.yaml
+```
+
+### Install instead
+
+Prefer a persistent install over `uvx`? Add it to a project/environment:
 
 ```sh
 uv pip install git+https://github.com/kjaymiller/aiven-runtime-containerizer
