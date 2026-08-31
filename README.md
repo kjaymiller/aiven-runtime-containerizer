@@ -74,6 +74,29 @@ an Aiven-managed service imposes no ordering constraint -- that service
 is never built by this tool (it's skipped, or bound per above), so
 there's nothing to build first.
 
+### Overriding where a Dockerfile gets written
+
+A service's generated Dockerfile normally lands in `<docker-dir>/<name>`
+(`docker/web` by default). Override that for one service the same two
+ways as everything else above:
+
+- **`x-dockerfile-path:`** on the compose service:
+
+  ```yaml
+  services:
+    web:
+      image: myorg/web:1.0
+      x-dockerfile-path: services/web
+  ```
+
+- **`--dockerfile-path web=services/web`** on the command line -- wins
+  if both are given for the same service.
+
+Either way, the file is still always named `Dockerfile`, written inside
+that directory, and `build:` is rewritten to point at it -- just a
+different directory than the default. The usual `--force`-gated
+"already exists" skip still applies at the overridden path.
+
 ## Run it with uvx
 
 No install step needed — `uvx` pulls the tool straight from GitHub, runs it
