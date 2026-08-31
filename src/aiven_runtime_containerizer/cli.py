@@ -30,11 +30,20 @@ default -- Aiven detects and provisions those natively, so dockerizing them
 just adds a build Aiven doesn't need. Pass -s/--service to convert one of
 those anyway, or --include-managed to stop skipping them entirely.
 
+Pass --project (or set AIVEN_PROJECT) to bind a managed-looking service to
+a real, existing Aiven service in that project instead of just skipping it:
+its resolved host/port/user/dbname get written into its `environment:`
+block (never a password -- see binding.py). Which real service it binds to
+is either the one match of its type in the project, or picked explicitly
+with an `x-aiven-service:` key on the service or a `--bind name=service`
+flag. Requires AIVEN_TOKEN in the environment.
+
 Usage:
     dockerize-images docker-compose.aiven.yaml
     dockerize-images docker-compose.aiven.yaml --dry-run
     dockerize-images docker-compose.aiven.yaml -s otel-collector -s jaeger
     dockerize-images docker-compose.aiven.yaml -o docker-compose.aiven.generated.yaml
+    dockerize-images docker-compose.aiven.yaml --project jay-miller --bind db=my-pg
 
 Or run without installing:
     uvx --from git+https://github.com/kjaymiller/aiven-runtime-containerizer dockerize-images docker-compose.aiven.yaml
@@ -42,11 +51,15 @@ Or run without installing:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 import click
 from ruamel.yaml import YAML
+
+from .aiven_services import AivenApiServiceDirectory, CachingServiceDirectory
+from .binding import binding_environment, parse_bind_flags, resolve_binding
 
 # Known image repo names, per Aiven-managed service type, that this tool
 # recognizes as "don't dockerize this -- Aiven provisions it natively".
@@ -133,6 +146,22 @@ def build_dockerfile(image: str) -> str:
     return f"FROM {image}\n"
 
 
+def _build_service_directory() -> CachingServiceDirectory:
+    """Construct the (cached) real Aiven service directory from AIVEN_TOKEN.
+
+    Deliberately reads the token straight from the environment rather than
+    accepting it as a CLI option/argument -- a token passed on the command
+    line ends up in shell history and `ps` output.
+    """
+    token = os.environ.get("AIVEN_TOKEN")
+    if not token:
+        raise click.ClickException(
+            "AIVEN_TOKEN environment variable is required to look up Aiven "
+            "services for --project/--bind/x-aiven-service (see README)."
+        )
+    return CachingServiceDirectory(AivenApiServiceDirectory(token))
+
+
 @click.command()
 @click.argument(
     "compose_file", type=click.Path(exists=True, dir_okay=False, path_type=Path)
@@ -178,6 +207,27 @@ def build_dockerfile(image: str) -> str:
     is_flag=True,
     help="Show what would change without writing any files.",
 )
+@click.option(
+    "--project",
+    envvar="AIVEN_PROJECT",
+    default=None,
+    help=(
+        "Aiven project to bind managed-looking services against (env: "
+        "AIVEN_PROJECT). Without this, managed services are only skipped, "
+        "same as always -- no Aiven API calls are made."
+    ),
+)
+@click.option(
+    "--bind",
+    "binds",
+    multiple=True,
+    metavar="NAME=SERVICE",
+    help=(
+        "Bind compose service NAME to the Aiven service SERVICE by name "
+        "(repeatable), same effect as an `x-aiven-service:` key on NAME. "
+        "Requires --project."
+    ),
+)
 def main(
     compose_file: Path,
     output_path: Path | None,
@@ -186,8 +236,13 @@ def main(
     force: bool,
     include_managed: bool,
     dry_run: bool,
+    project: str | None,
+    binds: tuple[str, ...],
 ) -> None:
     """Convert IMAGE references in COMPOSE_FILE to local build: Dockerfiles."""
+    bind_overrides = parse_bind_flags(binds)
+    directory: CachingServiceDirectory | None = None
+
     yaml = YAML()
     yaml.preserve_quotes = True
     yaml.width = 4096
@@ -209,6 +264,7 @@ def main(
             )
 
     converted: list[str] = []
+    bound: list[str] = []
     skipped: list[str] = []
 
     for name, definition in all_services.items():
@@ -224,6 +280,35 @@ def main(
 
         explicitly_requested = name in (wanted or set())
         managed_match = managed_service_match(image)
+        override_name = bind_overrides.get(name) or definition.get("x-aiven-service")
+
+        if override_name or (managed_match and project):
+            if not project:
+                raise click.ClickException(
+                    f"{name}: has an x-aiven-service/--bind override but no "
+                    "--project (or AIVEN_PROJECT) was given to look it up in."
+                )
+            if directory is None:
+                directory = _build_service_directory()
+            aiven_service = resolve_binding(
+                compose_service_name=name,
+                service_type=managed_match,
+                project=project,
+                directory=directory,
+                override_name=override_name,
+            )
+            env = binding_environment(name, aiven_service)
+            if "environment" in definition:
+                definition["environment"].update(env)
+            else:
+                definition.insert(1, "environment", env)
+            click.echo(
+                f"{name}: bound to Aiven {aiven_service.service_type} "
+                f"service '{aiven_service.name}'"
+            )
+            bound.append(name)
+            continue
+
         if managed_match and not include_managed and not explicitly_requested:
             skipped.append(
                 f"{name} (looks like an Aiven-managed '{managed_match}' service, "
@@ -248,7 +333,7 @@ def main(
         definition.insert(0, "build", f"./{service_dir.as_posix()}")
         converted.append(name)
 
-    if not converted:
+    if not converted and not bound:
         click.echo("Nothing to convert.", err=True)
         if skipped:
             click.echo("Skipped: " + "; ".join(skipped), err=True)
