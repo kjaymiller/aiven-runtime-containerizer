@@ -1,0 +1,33 @@
+name: E2E (manual)
+
+# Creates real dev-tier Aiven services (pg, OpenSearch, ClickHouse, Kafka)
+# in the jay-miller project and tears them down again -- see #7. Manual
+# trigger only: never runs on a pull_request event, so a fork PR cannot
+# reach the AIVEN_TOKEN secret this needs. Run from the Actions tab, or:
+#   gh workflow run e2e.yml
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+
+      - run: mise run install
+
+      # No fnox involved here -- the AIVEN_TOKEN secret becomes an env var
+      # directly from GitHub Actions, which is exactly what the e2e suite
+      # (once #7 lands) reads.
+      - env:
+          AIVEN_TOKEN: ${{ secrets.AIVEN_TOKEN }}
+          AIVEN_PROJECT: ${{ vars.AIVEN_PROJECT || 'jay-miller' }}
+        run: uv run pytest -m e2e -v
