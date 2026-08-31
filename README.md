@@ -59,6 +59,21 @@ dockerize-images docker-compose.aiven.yaml --project jay-miller
 dockerize-images docker-compose.aiven.yaml --project jay-miller --bind db=my-pg
 ```
 
+### depends_on ordering
+
+When a run converts more than one service, they're processed in
+dependency order (`depends_on`, either compose form) rather than
+whatever order they happen to appear in the file -- so if `web` depends
+on `worker`, `worker`'s Dockerfile exists before `web`'s is written. The
+resolved order is printed (`Build order: worker -> web`), including on
+`--dry-run`.
+
+A `depends_on` naming a service that doesn't exist in `services:` is an
+error. A dependency cycle is an error naming the cycle. A dependency on
+an Aiven-managed service imposes no ordering constraint -- that service
+is never built by this tool (it's skipped, or bound per above), so
+there's nothing to build first.
+
 ## Run it with uvx
 
 No install step needed — `uvx` pulls the tool straight from GitHub, runs it
