@@ -38,12 +38,17 @@ is either the one match of its type in the project, or picked explicitly
 with an `x-aiven-service:` key on the service or a `--bind name=service`
 flag. Requires AIVEN_TOKEN in the environment.
 
+A service's generated Dockerfile normally lands in <docker_dir>/<name>;
+override that for one service with an `x-dockerfile-path:` key on it, or
+a `--dockerfile-path name=path` flag (the flag wins if both are given).
+
 Usage:
     dockerize-images docker-compose.aiven.yaml
     dockerize-images docker-compose.aiven.yaml --dry-run
     dockerize-images docker-compose.aiven.yaml -s otel-collector -s jaeger
     dockerize-images docker-compose.aiven.yaml -o docker-compose.aiven.generated.yaml
     dockerize-images docker-compose.aiven.yaml --project jay-miller --bind db=my-pg
+    dockerize-images docker-compose.aiven.yaml --dockerfile-path web=services/web
 
 Or run without installing:
     uvx --from git+https://github.com/kjaymiller/aiven-runtime-containerizer dockerize-images docker-compose.aiven.yaml
@@ -60,6 +65,7 @@ from ruamel.yaml import YAML
 
 from .aiven_services import AivenApiServiceDirectory, CachingServiceDirectory
 from .binding import binding_environment, parse_bind_flags, resolve_binding
+from .dockerfile_paths import parse_dockerfile_path_flags, resolve_service_dir
 from .ordering import resolve_build_order, validate_dependencies_exist
 
 # Known image repo names, per Aiven-managed service type, that this tool
@@ -229,6 +235,17 @@ def _build_service_directory() -> CachingServiceDirectory:
         "Requires --project."
     ),
 )
+@click.option(
+    "--dockerfile-path",
+    "dockerfile_paths",
+    multiple=True,
+    metavar="NAME=PATH",
+    help=(
+        "Write NAME's generated Dockerfile into PATH instead of "
+        "<docker-dir>/NAME (repeatable), same effect as an "
+        "`x-dockerfile-path:` key on NAME (the flag wins if both are given)."
+    ),
+)
 def main(
     compose_file: Path,
     output_path: Path | None,
@@ -239,9 +256,11 @@ def main(
     dry_run: bool,
     project: str | None,
     binds: tuple[str, ...],
+    dockerfile_paths: tuple[str, ...],
 ) -> None:
     """Convert IMAGE references in COMPOSE_FILE to local build: Dockerfiles."""
     bind_overrides = parse_bind_flags(binds)
+    dockerfile_path_overrides = parse_dockerfile_path_flags(dockerfile_paths)
     directory: CachingServiceDirectory | None = None
 
     yaml = YAML()
@@ -326,7 +345,9 @@ def main(
             )
             continue
 
-        service_dir = docker_dir / name
+        service_dir = resolve_service_dir(
+            name, definition, docker_dir, dockerfile_path_overrides.get(name)
+        )
         dockerfile_path = service_dir / "Dockerfile"
         content = build_dockerfile(image)
 
